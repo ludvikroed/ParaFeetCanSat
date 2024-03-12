@@ -120,7 +120,7 @@ data_list_radio = {}
 gps_data_to_send = {}
 counter_radio = 0
 counter_loop = 0
-slipp_2_fallskjerm = 70
+slipp_2_fallskjerm = 70 # Setter høyden den andre fallskjremen skal slippes hvis den ikke får besked tidligere om å slippe den andre fallskjrmen
 can_sat_in_air = False
 drop_2_parachute = False
 altitude = 0
@@ -129,9 +129,10 @@ last_servo_angel = 90
 print("-----------Starting loop----------")
 while True:
     error_messages = {}
-    packet = receiver_rfm9x.receive()
-    time_packet = time.monotonic()
+    packet = receiver_rfm9x.receive() # her mottar vi data fra ground station.
+    time_packet = time.monotonic() 
 
+    # for løkka under gjennom gjennom ordboka som lagrer statusen til alle sensorene. Hvis statusen er False vil den forsøke å initialisere sensoren på nytt. 
     for sensor, [init_func, status] in alle_sensorer_status.items():
         if not status:
             try:
@@ -140,9 +141,12 @@ while True:
                 print(f"{sensor} initialisert suksessfullt.")
             except Exception as e:
                 print(f"Feil ved initialisering av {sensor}: {e}")
+
+    # Hvis verdien på analog input er mindre enn 30 000 er koppen ikke tilkoblet. 
+    #Hvis verdien er større betyr det at koppen er tilkoblet vil verdien være over 60 000
     kopp_connected = analog_input.value > 30000
-    # Process received radio packet
-    if packet is not None:
+    
+    if packet is not None: # Skjekker om vi har mottat noe data
         try:
             # Decode the received packet as a UTF-8 string
             packet_text = packet.decode("utf-8")
@@ -156,14 +160,17 @@ while True:
 
     #skjekk om vi har lette fra bakken:
     print(slipp_2_fallskjerm, can_sat_in_air, altitude)
+
+    # Can sat in air vil være True hvis CanSat-en har vært 20 meter over høyden vi skal slippe fallskjermen på. neste gang den passerer under høyden vi skal slippe fallskjermen på vet den at vi skal slippe fallskjermen
     if slipp_2_fallskjerm + 20  < altitude:
         can_sat_in_air = True
-    #skjekk om vi skal slippe den andre fallskjermen
+
+    # Hvis CanSat in air er True og vi er under siste høyde for slipp av andre fallskjerm 
     if can_sat_in_air and altitude < slipp_2_fallskjerm:
         drop_2_parachute = True
-    if packet_text == "slipp":
+    if packet_text == "slipp": # Hvis vi mottar slipp slipper vi andre fallskjerm
         drop_2_parachute = True
-    if packet_text == "Ikke slipp":
+    if packet_text == "Ikke slipp":  # Hvis vi mottar ikke slipp slipper vi ikke andre fallskjerm
         drop_2_parachute = False
 
     if drop_2_parachute:
