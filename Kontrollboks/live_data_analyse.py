@@ -1,7 +1,7 @@
 """
 En pc er koblet til adafruit-en som mottar data via den innebygde radio-en. 
 vi bruker Serial monitor som mottar data og putter data-en inn i en text fil
-Denne koden leser kontinuele denne text filen. Når filen blir oppdatert vil den plåtte ett nytt punkt på grafen.
+Denne koden leser kontinuele denne text filen. Når filen blir oppdatert vil den plåtte ett nytt punkt på grafen så vi kontinuelig ser høyden til vår CanSat.
 """
 
 import ast  # Importerer ast for å trygt evaluere strenger som Python-kode
@@ -13,8 +13,7 @@ a_values = []  # Liste for å holde høydeverdier
 t_now_values = []  # Liste for å holde tidspunktene for hver høydeverdi
 last_file_pos = 0  # Holder styr på siste posisjon i filen for å lese kun nye data
  
-# Angi banen til din kontinuerlig oppdaterte fil her
-filbane = "COM3_2024_03_12.14.35.16.001.txt"
+filbane = "COM3_2024_03_12.14.35.16.001.txt"# Navnen til text filen som skal analyseres
  
 def update_graph(frame):
     global a_values, t_now_values, last_file_pos  # Bruker globale variabler inni funksjonen
@@ -48,8 +47,9 @@ def update_graph(frame):
             t_now_values.pop(0)
             a_values.pop(0)
         # Tegner grafen på nytt med oppdaterte data hvis det er nye data
-        plt.cla()  # Fjerner tidligere tegnede linjer
-        plt.plot(t_now_values, a_values, label='Høyde over tid')
+        plt.cla()  # Fjerner tidligere grafer
+        plt.plot(t_now_values, a_values, label='Høyde over tid') # Tegner ny graf
+        #setter navn på akser og grafer
         plt.title("Høyde over tid - Siste 200 sekunder")
         plt.legend(loc="upper left")
         plt.xlabel("Tid (sekunder)")
@@ -58,10 +58,10 @@ def update_graph(frame):
     except Exception as e:
         print(f"En feil oppsto ved oppdatering av grafen: {e}")
  
-# Sett opp grafen for visning
+# Setter overskriften til grafen
 plt.title("Høyde over tid")
  
-# Oppretter en animasjon som oppdaterer grafen hvert 50. millisekund
-ani = FuncAnimation(plt.gcf(), update_graph, interval=50)
- 
-plt.show()  # Viser grafen
+# Oppretter en animasjon som oppdaterer grafen to ganger i sekundet
+ani = FuncAnimation(plt.gcf(), update_graph, interval=500)
+
+plt.show() # Viser grafen
