@@ -4,71 +4,64 @@ vi bruker Serial monitor som mottar data og putter data-en inn i en text fil
 Denne koden leser kontinuele denne text filen. Når filen blir oppdatert vil den plåtte ett nytt punkt på grafen.
 """
 
-import ast
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
+import ast  # Importerer ast for å trygt evaluere strenger som Python-kode
+import matplotlib.pyplot as plt  # Importerer matplotlib for plotting
+from matplotlib.animation import FuncAnimation  # For å animere grafen
  
-# Globale variabler for å holde styr på dataene og filens tilstand
-a_values = []  # Liste for å holde verdiene av "a"
-t_now_values = []  # Liste for å holde tidspunktene for hver "a" verdi
-last_read_line = 0  # Holder styr på hvor mange linjer som har blitt lest
-# {0: call sign, 1: akselrometer, 2: gyroskop, 3: gps ,4: altitude ,5: trykk ,6: tempratur,7: counter_radio,8: tid når radio ble sent, 9: slippes den andre fallskjrmen ,10:er koppen tilkoblet?, 11: gps_fix, 12: gps error, 13: hvis false. data er ikke lagret på sd kort, 14 in air}
-
-try:
-    def update_graph(frame):
-        global last_read_line
-        global a_values
-        global t_now_values
-        new_data = False  # Flag for å sjekke om ny data ble lagt til
-    
-        try:
-            # Åpner filen i 'r' modus og leser nye linjer
-            with open(filbane, "r", encoding='utf-8') as file:
-                lines = file.readlines()[last_read_line:]  # Les kun nye linjer
-    
-            for line in lines:
-                try:
-                    data = ast.literal_eval(line.strip())
-                    høyde = data[1][4]
-                    tid = data[1][8]
-                    a_values.append(høyde)
-                    t_now_values.append(tid)
-                    new_data = True
-                except (ValueError, SyntaxError) as e:
-                    print(f"Feil ved behandling av linjen: {e}")
-    
-            if new_data:
-                # Oppdater grafen kun hvis det er nye data
-                plt.cla()  # Fjern tidligere tegnede linjer
-                plt.plot(t_now_values, a_values, label='Verdi av a') # plotter ny graf med nye tall
-                plt.title("Høyde")
-                plt.legend(loc="upper left")
-                #setter navn på grafer
-                plt.xlabel("Tid (sekunder)")
-                plt.ylabel("Meter")
-                plt.draw()#tegner grafen
-            while True:
-                #Denne løkka fjerner data så vi altid har data fra de 200 siste sekundene dette gjør at vi ikke har masse unødvendig data
-                siste_tid = t_now_values[-1]
-                første_tid = t_now_values[0]
-                if siste_tid - første_tid > 200:
-                    t_now_values.pop(0)
-                    a_values.pop(0)
-                else:
-                    break
-            last_read_line += len(lines)  # Oppdater antall leste linjer
-        except Exception as e:
-            print(f"En feil oppsto ved oppdatering av grafen: {e}")
-except (ValueError, SyntaxError) as e:
-    print("feil med funksjon: ", e)
-# Sett opp plottet
-plt.title("Verdier av 'a' Over Tid")
+# Globale variabler for å holde styr på dataene
+a_values = []  # Liste for å holde høydeverdier
+t_now_values = []  # Liste for å holde tidspunktene for hver høydeverdi
+last_file_pos = 0  # Holder styr på siste posisjon i filen for å lese kun nye data
  
 # Angi banen til din kontinuerlig oppdaterte fil her
-filbane = "devttyusbmodem101_2024_02_26.11.05.11.826.txt"
+filbane = "COM3_2024_03_12.14.35.16.001.txt"
  
-# Opprett animasjonen som oppdaterer grafen hvert halve sekund (500 ms)
-ani = FuncAnimation(plt.gcf(), update_graph, interval=500)
+def update_graph(frame):
+    global a_values, t_now_values, last_file_pos  # Bruker globale variabler inni funksjonen
  
-plt.show()
+    try:
+        # Åpner filen for lesing og hopper til siste kjente posisjon for å lese nye data
+        with open(filbane, "r", encoding='utf-8') as file:
+            file.seek(last_file_pos)  # Går til siste leseposisjon
+            lines = file.readlines()  # Leser kun nye linjer fra filen
+            last_file_pos = file.tell()  # Oppdaterer leseposisjonen for neste kall
  
+        # Behandler hver linje som er lest fra filen
+        for line in lines:
+            try:
+                # Evaluerer linjen trygt som en Python-uttrykk og sjekker dens lengde
+                data = ast.literal_eval(line.strip())
+                if len(data) > 1:
+                    data_from_air = data[1]
+                    # Sjekker om nøkkel '4' (høyde) og '8' (tid) finnes i dataen
+                    if "4" in data_from_air and "8" in data_from_air:
+                        høyde = data_from_air["4"]
+                        tid = data_from_air["8"]
+                        # Legger til høyde og tid i deres respektive lister
+                        a_values.append(float(høyde))
+                        t_now_values.append(float(tid))
+            except:
+                print("Feil med denne linjen", data)
+ 
+        # Fjerner data som er eldre enn 200 sekunder for å vise kun de siste 200 sekundene
+        while t_now_values and (t_now_values[-1] - t_now_values[0] > 200):
+            t_now_values.pop(0)
+            a_values.pop(0)
+        # Tegner grafen på nytt med oppdaterte data hvis det er nye data
+        plt.cla()  # Fjerner tidligere tegnede linjer
+        plt.plot(t_now_values, a_values, label='Høyde over tid')
+        plt.title("Høyde over tid - Siste 200 sekunder")
+        plt.legend(loc="upper left")
+        plt.xlabel("Tid (sekunder)")
+        plt.ylabel("Høyde (meter)")
+ 
+    except Exception as e:
+        print(f"En feil oppsto ved oppdatering av grafen: {e}")
+ 
+# Sett opp grafen for visning
+plt.title("Høyde over tid")
+ 
+# Oppretter en animasjon som oppdaterer grafen hvert 50. millisekund
+ani = FuncAnimation(plt.gcf(), update_graph, interval=50)
+ 
+plt.show()  # Viser grafen
