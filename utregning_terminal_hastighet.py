@@ -2,7 +2,7 @@ strekning = 1000
 
 masse = 300
 gravitasjonskonstant = 9.81 # m/s**2
-luftmotstandskoeffisient = 1.71
+luftmotstandskoeffisient = 1.75
 lufttrykk = 0.001225 # g/cm**3
 diameter = 33
 radius = diameter/2
