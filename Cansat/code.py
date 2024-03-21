@@ -125,14 +125,16 @@ can_sat_in_air = False
 drop_2_parachute = False
 altitude = 0
 last_servo_angel = 90
+received_data = False
+sendetid_prosent = 0
 
 print("-----------Starting loop----------")
 while True:
     error_messages = {}
     packet = receiver_rfm9x.receive() # her mottar vi data fra ground station.
-    time_packet = time.monotonic() 
+    time_packet = time.monotonic()
 
-    # for løkka under gjennom gjennom ordboka som lagrer statusen til alle sensorene. Hvis statusen er False vil den forsøke å initialisere sensoren på nytt. 
+    # for løkka under gjennom gjennom ordboka som lagrer statusen til alle sensorene. Hvis statusen er False vil den forsøke å initialisere sensoren på nytt.
     for sensor, [init_func, status] in alle_sensorer_status.items():
         if not status:
             try:
@@ -141,38 +143,42 @@ while True:
                 print(f"{sensor} initialisert suksessfullt.")
             except Exception as e:
                 print(f"Feil ved initialisering av {sensor}: {e}")
-
-    # Hvis verdien på analog input er mindre enn 30 000 er koppen ikke tilkoblet. 
+    # Hvis verdien på analog input er mindre enn 30 000 er koppen ikke tilkoblet.
     #Hvis verdien er større betyr det at koppen er tilkoblet vil verdien være over 60 000
     kopp_connected = analog_input.value > 30000
-    
+
     if packet is not None: # Skjekker om vi har mottat noe data
         try:
             # Decode the received packet as a UTF-8 string
             packet_text = packet.decode("utf-8")
             print("Received:", packet_text)
+            received_data = True
         except UnicodeDecodeError:
+            received_data = False
             packet_text = "failed decoding radio message"
             error_messages.radio_in = "Received packet cannot be decoded as UTF-8."
     else:
+        time_now = time.monotonic()
+        if (time_packet + 2) < time_now:
+            received_data = False
+        else:
+            received_data = True
         packet_text = False
     last_radio_message = {"data": packet_text, "time": time_packet}
-
+    print(received_data)
     #skjekk om vi har lette fra bakken:
-    print(slipp_2_fallskjerm, can_sat_in_air, altitude)
 
     # Can sat in air vil være True hvis CanSat-en har vært 20 meter over høyden vi skal slippe fallskjermen på. neste gang den passerer under høyden vi skal slippe fallskjermen på vet den at vi skal slippe fallskjermen
     if slipp_2_fallskjerm + 20  < altitude:
         can_sat_in_air = True
 
-    # Hvis CanSat in air er True og vi er under siste høyde for slipp av andre fallskjerm 
+    # Hvis CanSat in air er True og vi er under siste høyde for slipp av andre fallskjerm
     if can_sat_in_air and altitude < slipp_2_fallskjerm:
         drop_2_parachute = True
-    if packet_text == "slipp": # Hvis vi mottar slipp slipper vi andre fallskjerm
+    if packet_text == "Slipp": # Hvis vi mottar slipp slipper vi andre fallskjerm
         drop_2_parachute = True
-    if packet_text == "Ikke slipp":  # Hvis vi mottar ikke slipp slipper vi ikke andre fallskjerm
+    if packet_text == "Ikke slipp": # Hvis vi mottar ikke slipp slipper vi ikke andre fallskjerm
         drop_2_parachute = False
-
     if drop_2_parachute:
         if kopp_connected:
             if last_servo_angel == 0:
@@ -208,8 +214,8 @@ while True:
         # under regner vi ut høyden cansat-en er over bakken:
         altitude = 8500 * math.log(start_pressure / pressure)
         """
-        Vi lager en liste med data som heter data list og en som heter data list radio. 
-        Det er fordi vi kan ikke sende så mye data via radio-en. 
+        Vi lager en liste med data som heter data list og en som heter data list radio.
+        Det er fordi vi kan ikke sende så mye data via radio-en.
         Vi lagrer masse data på SD kortet også sender vi bare den absulutt nødvendige data-en via radio ned til bakken
         """
         # legger til Call sign så det er lett å se at det er vår data
@@ -228,18 +234,21 @@ while True:
         data_list["r_received"] = last_radio_message
         data_list["in_air"] = can_sat_in_air
         data_list["2_parachute"] = drop_2_parachute
-        #data_list["s_angel"] = my_servo.angle
+        data_list["s_angel"] = my_servo.angle
         data_list["count_R"] = counter_radio
         data_list["count_L"] = counter_loop
         data_list["t_now"] = time_now
-        data_list["r_interval"] = time_now - last_sent_radio_data
+        radio_interval = time_now - last_sent_radio_data
+        data_list["r_interval"] = radio_interval
         data_list["kopp"] = kopp_connected
+        data_list["sendetid"] = sendetid_prosent
+        data_list_str = str(data_list)
         try:
             # Open a file in append mode ("/sd/text.txt" is the file path)
-            with open("/sd/text.json", "a") as json_file:
+            with open("/sd/text.txt", "a") as file:
                 # Append new data to the file
-                json.dump(data_list, json_file)
-                json_file.write("\n")  # Add a newline for each entry
+                file.write(data_list_str)
+                file.write("\n")  # Legg til en ny linje for hver oppføring
         except:
             data_list_radio[13] = False
             pass
@@ -248,9 +257,9 @@ while True:
             data_list_radio[11] = gps.has_fix
         except:
             data_list_radio[12] = "no gps connected"
-        # {0: call sign, 1: akselrometer, 2: gyroskop, 3: gps ,4: altitude ,5: trykk ,6: tempratur,7: counter_radio,8: tid når radio ble sent, 9: slippes den andre fallskjrmen ,10:er koppen tilkoblet?, 11: gps_fix, 12: gps error, 13: hvis false. data er ikke lagret på sd kort}
+        # {0: call sign, 1: akselrometer, 2: received_data, 3: gps ,4: altitude ,5: trykk ,6: tempratur,7: counter_radio,8: tid når radio ble sent, 9: slippes den andre fallskjrmen ,10:er koppen tilkoblet?, 11: gps_fix, 12: gps error, 13: hvis false. data er ikke lagret på sd kort}
         data_list_radio[1] = acceleration
-        data_list_radio[2] = gyro
+        data_list_radio[2] = received_data
         data_list_radio[3] = gps_data_to_send
         data_list_radio[4] = altitude
         data_list_radio[5] = pressure
@@ -264,7 +273,11 @@ while True:
         data_bytes = bytes(json.dumps(data_list_radio), "utf-8")
         try:
             #sender data via radio
+            print(time.monotonic())
+            time_start_radio = time.monotonic()
             transmitter_rfm9x.send(data_bytes)
+            sendetid = time.monotonic() - time_start_radio
+            sendetid_prosent = radio_interval / sendetid
         except Exception as transmit_error:
             print("Transmission failed. Error:", str(transmit_error))
         #resetter alle listene med data
