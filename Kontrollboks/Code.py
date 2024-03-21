@@ -1,4 +1,3 @@
-
 import board
 import busio
 import digitalio
@@ -7,158 +6,141 @@ import adafruit_rfm9x
 import time
 import json
 
-# ---- brytere ---
-# ---- 0 ------------- 1 -------2----------3----
-# ikke tilkoblet -- lys test - alt på---knapp på
-
-# ------------lys---------
-# 1------2------------------------3---------------------4----
-# ------------------------------------- -------------------------------5--------6
-# trykk bra- trykk dorlig - lyser når vi får data --kopp tilkoblet---slipp---ikke slipp
-
-# SPI-kommunikasjonsprotokoll for SD-kortet og radioen
+# SPI for SD card and radio
 spi = busio.SPI(board.SCK, MOSI=board.MOSI, MISO=board.MISO)
 
-# Definer radio parametere
+# Radio parameters
 RADIO_FREQ_MHZ = 869.4
 CS = digitalio.DigitalInOut(board.RFM_CS)
 RESET = digitalio.DigitalInOut(board.RFM_RST)
 
-# Define the UART connection for å sende data adafruit til arduino og pc
+# UART for sending data to Arduino and PC
 uart = busio.UART(board.TX, board.RX, baudrate=9600)
 
-# Initialiser RFM radio for mottaker, Initialiser RFM radio for sender
+# Initialize RFM radio for transmitter and receiver
 transmitter_rfm9x = adafruit_rfm9x.RFM9x(spi, CS, RESET, RADIO_FREQ_MHZ)
 transmitter_rfm9x.tx_power = 23
 receiver_rfm9x = adafruit_rfm9x.RFM9x(spi, CS, RESET, RADIO_FREQ_MHZ)
 receiver_rfm9x.tx_power = 23
 
-# fra venstre lys 0 i liste = 0, 1 i liste = 2, 2 i liste = 3, 3 i liste = 4, 4 i liste = 5, 5 i liste = 6
-lys_control_box = [board.D5, board.D9, board.D10, board.D11, board.D6, board.D12]
-leds = [digitalio.DigitalInOut(pin) for pin in lys_control_box]
+# LED control
+led_pins = [board.D5, board.D9, board.D10, board.D11, board.D6, board.D12]
+leds = [digitalio.DigitalInOut(pin) for pin in led_pins]
 for led in leds:
     led.direction = digitalio.Direction.OUTPUT
 
+# Switches and button setup
 switch_pins = [board.A0, board.A1, board.A2]
-knapp_pin = board.A3
-knapp_analog = analogio.AnalogIn(knapp_pin)
+button_pin = board.A3
+button_analog = analogio.AnalogIn(button_pin)
 switches = [analogio.AnalogIn(pin) for pin in switch_pins]
 
 data_to_send = "Slipp"
-siste_trykk = 0
-siste_sent_data_arduino = 0
+last_button_press = 0
+last_data_sent_to_arduino = 0
 variable_to_send = 0
 altitude = None
-last_bryter_1 = False
+last_switch_1 = False
 inAir = False
 
 while True:
-    data_to_pc =[{}]
+    data_to_pc = [{}]
     data_to_pc[0]["error"] = []
-    knapp_value = knapp_analog.value
+    button_value = button_analog.value
     switch_values = [switch.value for switch in switches]
+    print(switch_values, button_value)
+    button_pressed = button_value > 45_000
+    switch_1 = switch_values[0] > 40_000
+    switch_2 = switch_values[1] > 30_000
+    switch_3 = switch_values[2] > 30_000
 
-    knapp = knapp_value > 30000
-    bryter_1 = switch_values[0] > 30000
-    bryter_2 = switch_values[1] > 30000
-    bryter_3 = switch_values[2] > 50000
+    data_to_pc[0]["switches"] = [switch_1, switch_2, switch_3]
+    data_to_pc[0]["button"] = button_pressed
 
-    data_to_pc[0]["brytere"] = [bryter_1, bryter_2, bryter_3]
-    data_to_pc[0]["knapp"] = knapp
-    #print(switch_values[0], switch_values[1], switch_values[2], knapp_value)
-    #print(bryter_1, bryter_2, bryter_3, knapp)
-
-    if bryter_2:
-        if siste_sent_data_arduino + 1 < time.monotonic():
-            message = (
-                str(variable_to_send) + "\n"
-            )  # Convert the variable to string and add newline
+    if switch_2:
+        if last_data_sent_to_arduino + 1 < time.monotonic():
+            message = f"{variable_to_send}\n"
             uart.write(message.encode())
-            #print("sent:", message, "to arduino")
             data_to_pc[0]["arduino"] = message
-            siste_sent_data_arduino = time.monotonic()
+            last_data_sent_to_arduino = time.monotonic()
 
-        # Motta data over radioen
         packet = receiver_rfm9x.receive()
-        #print(packet)
-
-        #print("received: ", packet)
-        # Sender data via Serial til arduino og pc
-        # uart.write(packet)
         if packet is not None:
             leds[3].value = True
             try:
-                try:
-                    packet_str = str(packet, "utf-8")
-                except:
-                    data_to_pc[0]["error"].append("packet_str error")
+                packet_str = packet.decode("utf-8")
                 received_data = json.loads(packet_str)
-                print("Received data:", received_data)
                 data_to_pc.append(received_data)
-                if received_data['10'] == True:
+
+                if '10' in received_data and received_data['10']:
                     leds[2].value = True
                 else:
                     leds[2].value = False
-                try:
-                    pressure = int(received_data['5'])
-                except:
-                    data_to_pc[0]["erorr"].append("pressure error")
-                    #print("----------------pressure error----------------")
-                try:
-                    altitude = int(received_data['4'])
-                    variable_to_send = altitude
-                    if -10 < altitude < 1100:
-                        leds[0].value = True
-                        leds[1].value = False
-                    else:
-                        leds[1].value = True
-                        leds[0].value = False
 
-                except:
-                    data_to_pc[0]["erorr"].append("altitude error")
-                    leds[1].value = True
-                    leds[0].value = False
-                try:
-                    inAir = received_data['14']
-                except:
-                    data_to_pc[0]["erorr"].append("error with can sat in air")
-            except KeyError as error:
-                data_to_pc[0]["erorr"].append(error)
+                if '5' in received_data:
+                    try:
+                        pressure = int(received_data['5'])
+                    except ValueError:
+                        data_to_pc[0]["error"].append("pressure conversion error")
+
+                if '4' in received_data:
+                    try:
+                        altitude = int(received_data['4'])
+                        variable_to_send = altitude
+                        leds[1].value = not (-10 < altitude < 1100)
+                    except ValueError:
+                        data_to_pc[0]["error"].append("altitude conversion error")
+                        leds[1].value = True
+
+                if '2' in received_data:
+                    try:
+                        data_mottat_av_cansat = received_data['2']
+                        print(data_mottat_av_cansat)
+                        if data_mottat_av_cansat == True:
+                            leds[4].value = True
+                        else:
+                            leds[4].value = False
+                    except ValueError:
+                        data_to_pc[0]["error"].append("feil med mottat data for CanSat")
+                        leds[4].value = False
+
+                inAir = received_data.get('14', False)
+            except (KeyError, ValueError, json.JSONDecodeError) as e:
+                data_to_pc[0]["error"].append(f"Data processing error: {e}")
         else:
             leds[3].value = False
-        if bryter_3:
-            if knapp:
-                if siste_trykk + 2 < time.monotonic():
-                    siste_trykk = time.monotonic()
-                    if data_to_send == "Ikke slipp":
-                        data_to_send = "slipp"
-                    else:
-                        data_to_send = "Ikke slipp"
-            if altitude == None:
-                leds[4].value = False
-                leds[5].value = True
-            elif inAir and (altitude < 110):
-                leds[4].value = True
-                leds[5].value = False
-            else:
-                leds[4].value = False
-                leds[5].value = True
-            # Send data over radioen
-        transmitter_rfm9x.send(bytes(data_to_send, "utf-8"))
-        #print("Data sent:", data_to_send)
+
+        if switch_3 and button_pressed:
+            print("her")
+            if last_button_press + 2 < time.monotonic():
+                last_button_press = time.monotonic()
+                if data_to_send == "Slipp":
+                    data_to_send = "Ikke slipp"
+                    leds[0].value = False
+                else:
+                    data_to_send = "Slipp"
+                    leds[0].value = True
+
+        if altitude is None:
+            leds[5].value = True
+        elif inAir and altitude < 110:
+            leds[5].value = False
+        else:
+            leds[5].value = True
+
+        transmitter_rfm9x.send(data_to_send.encode())
         data_to_pc[0]["sent"] = data_to_send
     else:
-        if bryter_1 == False:
+        if not switch_1:
             for led in leds:
                 led.value = False
-    if bryter_1:
-        last_bryter_1 = True
+    if switch_1:
+        last_switch_1 = True
         for led in leds:
             led.value = True
-
     else:
-        if last_bryter_1:
+        if last_switch_1:
             for led in leds:
                 led.value = False
-            last_bryter_1 = False
+            last_switch_1 = False
     print(data_to_pc)
